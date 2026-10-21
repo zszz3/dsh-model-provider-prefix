@@ -513,16 +513,23 @@ window.__ModuleLoader__.load({
     }
 
     /**
-    /**
      * Register the seat over the profile's model directory service.
+     *
+     * The seat shadows a built-in entry rather than adding to an empty slot, so it
+     * has to survive two things the additive plugins never meet: a composer that
+     * mounts after the plugin loads, and one that remounts on session and workspace
+     * switches (which drops a registration made earlier). Rather than poll, the
+     * seat watches the document and re-registers the moment its own trigger is no
+     * longer rendered, so the swap happens within a frame and stays invisible.
      * @param slots - the slot registry service.
      * @param models - the model directory service.
      * @param sessions - the session service, for subagent availability.
-     * @returns the slot disposer, or undefined when registration was rejected.
+     * @returns a disposer that stops watching and drops the registration.
      */
-
     function registerSeat(slots, models, sessions) {
       var current = null
+      var lastAttemptAt = 0
+      var misses = 0
 
       /* One registration pass: drop the previous entry first, so a retry cannot stack. */
       function attempt() {
@@ -532,7 +539,7 @@ window.__ModuleLoader__.load({
             current = null
           }
           current = slots.inject('conversation.input.model', function () {
-            var disposer = slots.register({
+            return slots.register({
               name: 'conversation.input.model',
               /* Lower than the shipped seat's default 0; the slot renders the lowest priority entry. */
               priority: -1,
@@ -557,25 +564,11 @@ window.__ModuleLoader__.load({
                 }
               },
             }, SeatBoundary)
-            return disposer
           })
         } catch (error) {
           console.error('[dsh-model-provider-prefix] seat registration failed:', error)
         }
       }
-
-      /* The composer commits its children table after our first pass, so an entry registered
-         earlier is not part of the rendered set until something registers it again.
-         Re-register until our own trigger actually shows up in the DOM — the slot registry can
-         report the entry as active while React has not re-rendered yet, so only the rendered
-         marker proves the seat is ours — and then keep watching: the composer remounts on
-         session/workspace switches and drops the entry, so a permanent watchdog re-takes the
-         seat whenever the marker disappears. Each pass disposes the previous entry first, so
-         retries cannot stack. */
-      var RETRY_DELAYS = [60, 150, 350, 700, 1200, 2000, 3200, 4500]
-      var WATCHDOG_MS = 2000
-      var step = 1
-      var timer = null
 
       function seatRendered() {
         try {
@@ -585,31 +578,58 @@ window.__ModuleLoader__.load({
         }
       }
 
-      /* Keep the watchdog from holding a Node process open (tests, SSR). In the renderer the
-         handle is a number and has no unref. */
-      function startTimer(fn, ms) {
-        var handle = setTimeout(fn, ms)
-        if (handle !== null && handle !== undefined && typeof handle.unref === 'function') handle.unref()
-        return handle
-      }
-
-      function tick() {
-        timer = null
+      /* Re-take the seat only when ours is not on screen. The gap grows with consecutive
+         misses so a slot that is deliberately not rendered cannot be re-registered on
+         every DOM change (streaming responses mutate the transcript continuously). */
+      function ensure() {
         if (seatRendered()) {
-          timer = startTimer(tick, WATCHDOG_MS)
+          misses = 0
           return
         }
+        var now = Date.now()
+        var gap = Math.min(200 + misses * 200, 2000)
+        if (now - lastAttemptAt < gap) return
+        lastAttemptAt = now
+        misses += 1
         attempt()
-        var delay = step < RETRY_DELAYS.length ? RETRY_DELAYS[step] : WATCHDOG_MS
-        step += 1
-        timer = startTimer(tick, delay)
       }
 
       attempt()
-      timer = startTimer(tick, RETRY_DELAYS[0])
+
+      /* First mount lands late; the observation below cannot see a mount that already
+         happened, so cover the opening window with a short ladder. */
+      var LADDER = [60, 150, 350, 700, 1200, 2000, 3200]
+      var timers = LADDER.map(function (delay) { return setTimeout(ensure, delay) })
+
+      var observer = null
+      var queued = false
+      function schedule() {
+        if (queued) return
+        queued = true
+        var run = function () {
+          queued = false
+          ensure()
+        }
+        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run)
+        else setTimeout(run, 16)
+      }
+
+      try {
+        if (typeof MutationObserver === 'function' && document.body !== null) {
+          observer = new MutationObserver(schedule)
+          observer.observe(document.body, { childList: true, subtree: true })
+        }
+      } catch (error) {
+        console.error('[dsh-model-provider-prefix] seat observer failed:', error)
+      }
+
       return function () {
-        if (timer !== null) clearTimeout(timer)
-        timer = null
+        for (var i = 0; i < timers.length; i += 1) clearTimeout(timers[i])
+        timers.length = 0
+        if (observer !== null) {
+          observer.disconnect()
+          observer = null
+        }
         if (current !== null) current()
       }
     }
