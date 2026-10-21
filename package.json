@@ -1,0 +1,54 @@
+{
+  "name": "dsh-model-provider-prefix",
+  "version": "0.2.2",
+  "description": "Splits the composer model seat into two triggers: the model trigger reads Provider/Model and opens a provider list first, the reasoning strength sits in its own trigger beside it. · 把对话框的模型控件拆成两个：模型控件显示「供应商/模型」并先选供应商、再选模型，推理强度单独成钮。",
+  "type": "module",
+  "license": "MIT",
+  "author": "zszz3",
+  "homepage": "https://github.com/zszz3/dsh-model-provider-prefix#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zszz3/dsh-model-provider-prefix.git"
+  },
+  "bugs": {
+    "url": "https://github.com/zszz3/dsh-model-provider-prefix/issues"
+  },
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "client/client.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "test": "node --test test/client.test.mjs"
+  },
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "composer",
+    "model-selector",
+    "reasoning-effort"
+  ],
+  "engines": {
+    "dsh": ">=0.2.1-rc.2"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-model-selection"
+      ],
+      "platform": "web"
+    }
+  }
+}
