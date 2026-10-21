@@ -564,14 +564,19 @@ window.__ModuleLoader__.load({
         }
       }
 
+      /* The composer commits its children table after our first pass, so an entry registered
+         earlier is not part of the rendered set until something registers it again. Re-register
+         on a short ladder — the earliest pass that lands after that commit wins — and stop
+         retrying once the ladder is spent. Each pass disposes the previous entry first. */
+      var RETRY_DELAYS = [60, 150, 350, 700, 1200, 2000, 3200, 4500]
+      var timers = RETRY_DELAYS.map(function (delay) { return setTimeout(attempt, delay) })
+
       attempt()
-      /* The composer re-declares its children table when the session view mounts, which drops
-         entries registered earlier; re-register once the tree has settled. */
-      ;[1200, 4000].forEach(function (delay) {
-        var timer = setTimeout(attempt, delay)
-        if (timer !== null && timer !== undefined && typeof timer.unref === 'function') timer.unref()
-      })
-      return current
+      return function () {
+        for (var i = 0; i < timers.length; i += 1) clearTimeout(timers[i])
+        timers.length = 0
+        if (current !== null) current()
+      }
     }
 
     /**
