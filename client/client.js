@@ -565,16 +565,44 @@ window.__ModuleLoader__.load({
       }
 
       /* The composer commits its children table after our first pass, so an entry registered
-         earlier is not part of the rendered set until something registers it again. Re-register
-         on a short ladder — the earliest pass that lands after that commit wins — and stop
-         retrying once the ladder is spent. Each pass disposes the previous entry first. */
+         earlier is not part of the rendered set until something registers it again.
+         Re-register on a short ladder, then keep a slow retry going until our own trigger
+         actually shows up in the DOM: the slot registry can report the entry as active while
+         React has not re-rendered yet, so only the rendered marker proves the seat is ours.
+         Each pass disposes the previous entry first, so retries cannot stack. */
       var RETRY_DELAYS = [60, 150, 350, 700, 1200, 2000, 3200, 4500]
-      var timers = RETRY_DELAYS.map(function (delay) { return setTimeout(attempt, delay) })
+      var SLOW_RETRY_MS = 1500
+      var MAX_SLOW_RETRIES = 60
+      var step = 0
+      var timer = null
+
+      function seatRendered() {
+        try {
+          return document.querySelector('[data-dsh-pm-trigger]') !== null
+        } catch (error) {
+          return true
+        }
+      }
+
+      function scheduleNext() {
+        var delay
+        if (step < RETRY_DELAYS.length) delay = RETRY_DELAYS[step]
+        else if (step - RETRY_DELAYS.length < MAX_SLOW_RETRIES) delay = SLOW_RETRY_MS
+        else return
+        step += 1
+        timer = setTimeout(function () {
+          timer = null
+          attempt()
+          if (seatRendered()) return
+          scheduleNext()
+        }, delay)
+      }
 
       attempt()
+      if (!seatRendered()) scheduleNext()
       return function () {
-        for (var i = 0; i < timers.length; i += 1) clearTimeout(timers[i])
-        timers.length = 0
+        if (timer !== null) clearTimeout(timer)
+        timer = null
         if (current !== null) current()
       }
     }

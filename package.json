@@ -1,6 +1,6 @@
 {
   "name": "dsh-model-provider-prefix",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Splits the composer model seat into two triggers: the model trigger reads Provider/Model and opens a provider list first, the reasoning strength sits in its own trigger beside it. · 把对话框的模型控件拆成两个：模型控件显示「供应商/模型」并先选供应商、再选模型，推理强度单独成钮。",
   "type": "module",
   "license": "MIT",
